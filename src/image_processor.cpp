@@ -1070,9 +1070,9 @@ void ImageProcessor::twoPointRansac(
     Vec3f pt_h(pt.x, pt.y, 1.0f);
     //Vec3f pt_hc = dR * pt_h;
     Vec3f pt_hc = R_p_c * pt_h;
-    // TODO: 不用归一化？
-    pt.x = pt_hc[0];
-    pt.y = pt_hc[1];
+    // TODO: 不用归一化？估计是漏了
+    pt.x = pt_hc[0] / pt_hc[2];
+    pt.y = pt_hc[1] / pt_hc[2];
   }
 
   // Normalize the points to gain numerical stability.

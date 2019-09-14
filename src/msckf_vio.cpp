@@ -590,7 +590,7 @@ void MsckfVio::processModel(const double& time,
   // Propogate the state using 4th order Runge-Kutta
   predictNewState(dtime, gyro, acc);
 
-  // TODO: Phi 的公式推导及其意义
+  // TODO: 为什么要这么 modify 一下，注释掉测试感觉没啥影响
   // Modify the transition matrix
   Matrix3d R_kk_1 = quaternionToRotation(imu_state.orientation_null);
   Phi.block<3, 3>(0, 0) =
@@ -799,7 +799,7 @@ void MsckfVio::addFeatureObservations(
     }
   }
 
-  // TODO: 作用？为什么不会除 0？
+  // TODO: 作用（如果 tracking_trate 良好可能不会插入关键帧）？为什么不会除 0？
   tracking_rate =
     static_cast<double>(tracked_feature_num) /
     static_cast<double>(curr_feature_num);
@@ -868,7 +868,7 @@ void MsckfVio::measurementJacobian(
 
   // Modifty the measurement Jacobian to ensure
   // observability constrain.
-  // TODO:
+  // TODO: ？
   Matrix<double, 4, 6> A = H_x;
   Matrix<double, 6, 1> u = Matrix<double, 6, 1>::Zero();
   u.block<3, 1>(0, 0) = quaternionToRotation(
@@ -1164,6 +1164,7 @@ void MsckfVio::removeLostFeatures() {
   measurementUpdate(H_x, r);
 
   // Remove all processed features from the map.
+  // TODO: 这里把初始化后的 feature 都删了，为什么在 publish 中还有已初始化的 feature？
   for (const auto& feature_id : processed_feature_ids)
     map_server.erase(feature_id);
 
