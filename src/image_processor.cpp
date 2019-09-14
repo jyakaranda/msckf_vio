@@ -384,6 +384,14 @@ void ImageProcessor::initializeFirstFrame() {
   return;
 }
 
+/**
+ * @brief TODO没弄明白的是，为啥这里和之前的 stereoMatch 只用 R 就能计算特征点位置，t 为啥可以不用
+ * 
+ * @param input_pts 
+ * @param R_p_c 
+ * @param intrinsics 
+ * @param compensated_pts 
+ */
 void ImageProcessor::predictFeatureTracking(
     const vector<cv::Point2f>& input_pts,
     const cv::Matx33f& R_p_c,
@@ -414,6 +422,10 @@ void ImageProcessor::predictFeatureTracking(
   return;
 }
 
+/**
+ * @brief left img 光流跟踪
+ * 
+ */
 void ImageProcessor::trackFeatures() {
   // Size of each grid.
   static int grid_height =
@@ -618,6 +630,7 @@ void ImageProcessor::stereoMatch(
     // rotation from stereo extrinsics
     const cv::Matx33d R_cam0_cam1 = R_cam1_imu.t() * R_cam0_imu;
     vector<cv::Point2f> cam0_points_undistorted;
+    // TODO: cv::undistrotedPoints 没看明白，为啥仅使用旋转外参就能得到关键点在另一个相机的归一化坐标？公式推得不太一样
     undistortPoints(cam0_points, cam0_intrinsics, cam0_distortion_model,
                     cam0_distortion_coeffs, cam0_points_undistorted,
                     R_cam0_cam1);
@@ -680,6 +693,7 @@ void ImageProcessor::stereoMatch(
     cv::Vec3d pt1(cam1_points_undistorted[i].x,
         cam1_points_undistorted[i].y, 1.0);
     cv::Vec3d epipolar_line = E * pt0;
+    // TODO: 极线约束中的极线如何表示？error判断标准
     double error = fabs((pt1.t() * epipolar_line)[0]) / sqrt(
         epipolar_line[0]*epipolar_line[0]+
         epipolar_line[1]*epipolar_line[1]);
@@ -831,6 +845,10 @@ void ImageProcessor::addNewFeatures() {
   return;
 }
 
+/**
+ * @brief 一般是由于 track 导致 grid 中 feature 数量变多
+ * 
+ */
 void ImageProcessor::pruneGridFeatures() {
   for (auto& item : *curr_features_ptr) {
     auto& grid_features = item.second;
@@ -847,6 +865,17 @@ void ImageProcessor::pruneGridFeatures() {
   return;
 }
 
+/**
+ * @brief 未指定 new_intrinsics 则返回归一化坐标，否则返回图像坐标
+ * 
+ * @param pts_in 
+ * @param intrinsics 
+ * @param distortion_model 
+ * @param distortion_coeffs 
+ * @param pts_out 
+ * @param rectification_matrix 
+ * @param new_intrinsics 
+ */
 void ImageProcessor::undistortPoints(
     const vector<cv::Point2f>& pts_in,
     const cv::Vec4d& intrinsics,
@@ -914,6 +943,12 @@ vector<cv::Point2f> ImageProcessor::distortPoints(
   return pts_out;
 }
 
+/**
+ * @brief 差不多算是 midward integration
+ * 
+ * @param cam0_R_p_c 
+ * @param cam1_R_p_c 
+ */
 void ImageProcessor::integrateImuData(
     Matx33f& cam0_R_p_c, Matx33f& cam1_R_p_c) {
   // Find the start and the end limit within the imu msg buffer.
@@ -984,6 +1019,19 @@ void ImageProcessor::rescalePoints(
   return;
 }
 
+/**
+ * @brief TODO:
+ * 
+ * @param pts1 
+ * @param pts2 
+ * @param R_p_c 
+ * @param intrinsics 
+ * @param distortion_model 
+ * @param distortion_coeffs 
+ * @param inlier_error 
+ * @param success_probability 
+ * @param inlier_markers 
+ */
 void ImageProcessor::twoPointRansac(
     const vector<Point2f>& pts1, const vector<Point2f>& pts2,
     const cv::Matx33f& R_p_c, const cv::Vec4d& intrinsics,
@@ -1022,6 +1070,7 @@ void ImageProcessor::twoPointRansac(
     Vec3f pt_h(pt.x, pt.y, 1.0f);
     //Vec3f pt_hc = dR * pt_h;
     Vec3f pt_hc = R_p_c * pt_h;
+    // TODO: 不用归一化？
     pt.x = pt_hc[0];
     pt.y = pt_hc[1];
   }
@@ -1250,6 +1299,7 @@ void ImageProcessor::publish() {
   vector<Point2f> curr_cam0_points_undistorted(0);
   vector<Point2f> curr_cam1_points_undistorted(0);
 
+  // 得到去畸变后的归一化坐标
   undistortPoints(
       curr_cam0_points, cam0_intrinsics, cam0_distortion_model,
       cam0_distortion_coeffs, curr_cam0_points_undistorted);

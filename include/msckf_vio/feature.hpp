@@ -164,7 +164,14 @@ typedef std::map<FeatureIDType, Feature, std::less<int>,
         Eigen::aligned_allocator<
         std::pair<const FeatureIDType, Feature> > > MapServer;
 
-
+/**
+ * @brief msckf Equation (37)
+ * 
+ * @param T_c0_ci 
+ * @param x 
+ * @param z 
+ * @param e 
+ */
 void Feature::cost(const Eigen::Isometry3d& T_c0_ci,
     const Eigen::Vector3d& x, const Eigen::Vector2d& z,
     double& e) const {
@@ -220,11 +227,20 @@ void Feature::jacobian(const Eigen::Isometry3d& T_c0_ci,
   if (e <= optimization_config.huber_epsilon)
     w = 1.0;
   else
+  // 感觉不太对啊，e 接近 epsilon 时反而权重大于 1
     w = std::sqrt(2.0*optimization_config.huber_epsilon / e);
 
   return;
 }
 
+/**
+ * @brief 最小二乘解三角化，超定方程解析形式
+ * 
+ * @param T_c1_c2 
+ * @param z1 
+ * @param z2 
+ * @param p 
+ */
 void Feature::generateInitialGuess(
     const Eigen::Isometry3d& T_c1_c2, const Eigen::Vector2d& z1,
     const Eigen::Vector2d& z2, Eigen::Vector3d& p) const {
@@ -279,11 +295,14 @@ bool Feature::checkMotion(
   // speed up the checking process.
   Eigen::Vector3d translation = last_cam_pose.translation() -
     first_cam_pose.translation();
+  // 特征方向上的移动距离
   double parallel_translation =
     translation.transpose()*feature_direction;
+  // 垂直特征方向上的移动距离
   Eigen::Vector3d orthogonal_translation = translation -
     parallel_translation*feature_direction;
 
+  // 所以说沿着初次观测到特征的侧向方向移动才会触发更新
   if (orthogonal_translation.norm() >
       optimization_config.translation_threshold)
     return true;
@@ -332,8 +351,10 @@ bool Feature::initializePosition(
 
   // Generate initial guess
   Eigen::Vector3d initial_position(0.0, 0.0, 0.0);
+  // 感觉 measurements[measurements.size()-2] 更好些，这样与 measurement[0] 都是 cam0 观测到的了
   generateInitialGuess(cam_poses[cam_poses.size()-1], measurements[0],
       measurements[measurements.size()-1], initial_position);
+  // alpha, beta, ruo
   Eigen::Vector3d solution(
       initial_position(0)/initial_position(2),
       initial_position(1)/initial_position(2),
@@ -354,6 +375,7 @@ bool Feature::initializePosition(
     total_cost += this_cost;
   }
 
+  // TODO: 这个 LM 求解器可以学一下，基本上该有的东西都包含了，而且也不复杂
   // Outer loop.
   do {
     Eigen::Matrix3d A = Eigen::Matrix3d::Zero();
@@ -366,6 +388,7 @@ bool Feature::initializePosition(
 
       jacobian(cam_poses[i], solution, measurements[i], J, r, w);
 
+      // 这个判断不太好
       if (w == 1) {
         A += J.transpose() * J;
         b += J.transpose() * r;

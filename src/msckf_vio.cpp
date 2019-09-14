@@ -48,6 +48,7 @@ FeatureIDType Feature::next_id = 0;
 double Feature::observation_noise = 0.01;
 Feature::OptimizationConfig Feature::optimization_config;
 
+// TODO: ？
 map<int, double> MsckfVio::chi_squared_test_table;
 
 MsckfVio::MsckfVio(ros::NodeHandle& pnh):
@@ -102,6 +103,7 @@ bool MsckfVio::loadParameters() {
   // The initial covariance of orientation and position can be
   // set to 0. But for velocity, bias and extrinsic parameters,
   // there should be nontrivial uncertainty.
+  // TODO: 为什么这么设？
   double gyro_bias_cov, acc_bias_cov, velocity_cov;
   nh.param<double>("initial_covariance/velocity",
       velocity_cov, 0.25);
@@ -245,6 +247,10 @@ void MsckfVio::imuCallback(
   return;
 }
 
+/**
+ * @brief 这里跟 Quaternion kinematics 里说的不一样，这里是估计IMU初始朝向，而不是估计重力方向
+ * 
+ */
 void MsckfVio::initializeGravityAndBias() {
 
   // Initialize gravity and gyro bias.
@@ -371,7 +377,7 @@ void MsckfVio::featureCallback(
     state_server.imu_state.time = msg->header.stamp.toSec();
   }
 
-  static double max_processing_time = 0.0;
+  // static double max_processing_time = 0.0;
   static int critical_time_cntr = 0;
   double processing_start_time = ros::Time::now().toSec();
 
@@ -537,6 +543,13 @@ void MsckfVio::batchImuProcessing(const double& time_bound) {
   return;
 }
 
+/**
+ * @brief TODO: III.A propagate
+ * 
+ * @param time 
+ * @param m_gyro 
+ * @param m_acc 
+ */
 void MsckfVio::processModel(const double& time,
     const Vector3d& m_gyro,
     const Vector3d& m_acc) {
@@ -577,6 +590,7 @@ void MsckfVio::processModel(const double& time,
   // Propogate the state using 4th order Runge-Kutta
   predictNewState(dtime, gyro, acc);
 
+  // TODO: Phi 的公式推导及其意义
   // Modify the transition matrix
   Matrix3d R_kk_1 = quaternionToRotation(imu_state.orientation_null);
   Phi.block<3, 3>(0, 0) =
@@ -613,10 +627,12 @@ void MsckfVio::processModel(const double& time,
         21, 0, state_server.state_cov.rows()-21, 21) * Phi.transpose();
   }
 
+  // 保证对称
   MatrixXd state_cov_fixed = (state_server.state_cov +
       state_server.state_cov.transpose()) / 2.0;
   state_server.state_cov = state_cov_fixed;
 
+  // 这不就是作为 prev state 么，null space 是啥意思
   // Update the state correspondes to null space.
   imu_state.orientation_null = imu_state.orientation;
   imu_state.position_null = imu_state.position;
@@ -646,8 +662,10 @@ void MsckfVio::predictNewState(const double& dt,
   // Some pre-calculation
   Vector4d dq_dt, dq_dt2;
   if (gyro_norm > 1e-5) {
+    // 积分 dp*dt
     dq_dt = (cos(gyro_norm*dt*0.5)*Matrix4d::Identity() +
       1/gyro_norm*sin(gyro_norm*dt*0.5)*Omega) * q;
+    // 积分 dp*dt/2
     dq_dt2 = (cos(gyro_norm*dt*0.25)*Matrix4d::Identity() +
       1/gyro_norm*sin(gyro_norm*dt*0.25)*Omega) * q;
   }
@@ -673,6 +691,7 @@ void MsckfVio::predictNewState(const double& dt,
 
   // k3 = f(tn+dt/2, yn+k2*dt/2)
   Vector3d k2_v = v + k2_v_dot*dt/2;
+  // TODO: 关于 k3_v_dot 和 k2_q 跟我推的不一样
   Vector3d k3_v_dot = dR_dt2_transpose*acc +
     IMUState::gravity;
   Vector3d k3_p_dot = k2_v;
@@ -698,6 +717,7 @@ void MsckfVio::stateAugmentation(const double& time) {
   const Vector3d& t_c_i = state_server.imu_state.t_cam0_imu;
 
   // Add a new camera state to the state server.
+  // 拷贝当前 imu 位姿
   Matrix3d R_w_i = quaternionToRotation(
       state_server.imu_state.orientation);
   Matrix3d R_w_c = R_i_c * R_w_i;
@@ -779,6 +799,7 @@ void MsckfVio::addFeatureObservations(
     }
   }
 
+  // TODO: 作用？为什么不会除 0？
   tracking_rate =
     static_cast<double>(tracked_feature_num) /
     static_cast<double>(curr_feature_num);
@@ -815,6 +836,7 @@ void MsckfVio::measurementJacobian(
   Vector3d p_c1 = R_w_c1 * (p_w-t_c1_w);
 
   // Compute the Jacobians.
+  // measurement wrt feature
   Matrix<double, 4, 3> dz_dpc0 = Matrix<double, 4, 3>::Zero();
   dz_dpc0(0, 0) = 1 / p_c0(2);
   dz_dpc0(1, 1) = 1 / p_c0(2);
@@ -827,6 +849,8 @@ void MsckfVio::measurementJacobian(
   dz_dpc1(2, 2) = -p_c1(0) / (p_c1(2)*p_c1(2));
   dz_dpc1(3, 2) = -p_c1(1) / (p_c1(2)*p_c1(2));
 
+  // feature wrt cam pose
+  // TODO: 对 q 的导数推导没看懂
   Matrix<double, 3, 6> dpc0_dxc = Matrix<double, 3, 6>::Zero();
   dpc0_dxc.leftCols(3) = skewSymmetric(p_c0);
   dpc0_dxc.rightCols(3) = -R_w_c0;
@@ -835,6 +859,7 @@ void MsckfVio::measurementJacobian(
   dpc1_dxc.leftCols(3) = R_c0_c1 * skewSymmetric(p_c0);
   dpc1_dxc.rightCols(3) = -R_w_c1;
 
+  // feature wrt feature pose
   Matrix3d dpc0_dpg = R_w_c0;
   Matrix3d dpc1_dpg = R_w_c1;
 
@@ -843,6 +868,7 @@ void MsckfVio::measurementJacobian(
 
   // Modifty the measurement Jacobian to ensure
   // observability constrain.
+  // TODO:
   Matrix<double, 4, 6> A = H_x;
   Matrix<double, 6, 1> u = Matrix<double, 6, 1>::Zero();
   u.block<3, 1>(0, 0) = quaternionToRotation(
@@ -868,6 +894,7 @@ void MsckfVio::featureJacobian(
 
   // Check how many camera states in the provided camera
   // id camera has actually seen this feature.
+  // TODO: 感觉没必要啊
   vector<StateIDType> valid_cam_state_ids(0);
   for (const auto& cam_id : cam_state_ids) {
     if (feature.observations.find(cam_id) ==
@@ -988,6 +1015,7 @@ void MsckfVio::measurementUpdate(
   state_server.imu_state.acc_bias += delta_x_imu.segment<3>(9);
   state_server.imu_state.position += delta_x_imu.segment<3>(12);
 
+  // 才注意到这个外参。。挺有意思的，这不就是在线标定了？
   const Vector4d dq_extrinsic =
     smallAngleQuaternion(delta_x_imu.segment<3>(15));
   state_server.imu_state.R_imu_cam0 = quaternionToRotation(
@@ -1019,6 +1047,15 @@ void MsckfVio::measurementUpdate(
   return;
 }
 
+/**
+ * @brief TODO: 什么原理, r.t * (H*P*H.t+R).inv * r 是什么意思
+ * 
+ * @param H 
+ * @param r 
+ * @param dof 
+ * @return true 
+ * @return false 
+ */
 bool MsckfVio::gatingTest(
     const MatrixXd& H, const VectorXd& r, const int& dof) {
 
@@ -1055,6 +1092,7 @@ void MsckfVio::removeLostFeatures() {
     // Pass the features that are still being tracked.
     if (feature.observations.find(state_server.imu_state.id) !=
         feature.observations.end()) continue;
+    // 跟踪不稳定的特征
     if (feature.observations.size() < 3) {
       invalid_feature_ids.push_back(feature.id);
       continue;
@@ -1074,6 +1112,7 @@ void MsckfVio::removeLostFeatures() {
       }
     }
 
+    // 双目，所以是 4*Mj-3
     jacobian_row_size += 4*feature.observations.size() - 3;
     processed_feature_ids.push_back(feature.id);
   }
@@ -1160,6 +1199,7 @@ void MsckfVio::findRedundantCamStates(
     double angle = AngleAxisd(
         rotation*key_rotation.transpose()).angle();
 
+    // 跟踪情况良好、移动较小的话就删除第三新、第二新的state
     if (angle < rotation_threshold &&
         distance < translation_threshold &&
         tracking_rate > tracking_rate_threshold) {
@@ -1177,6 +1217,10 @@ void MsckfVio::findRedundantCamStates(
   return;
 }
 
+/**
+ * @brief 删除 cam state 前把与其关联的特征选出来进行更新（若未初始化则初始化），然后直接从state和cov中删除即可
+ * 
+ */
 void MsckfVio::pruneCamStateBuffer() {
 
   if (state_server.cam_states.size() < max_cam_state_size)
@@ -1304,6 +1348,10 @@ void MsckfVio::pruneCamStateBuffer() {
   return;
 }
 
+/**
+ * @brief 这个 reset 不是 eskf 里的 reset，而是检查当前位置的 uncertainty，如果太大就删除所有cam state和feature
+ * 
+ */
 void MsckfVio::onlineReset() {
 
   // Never perform online reset if position std threshold
