@@ -11,7 +11,7 @@ TODO:
 3. predictNewState 中 runge-kutta 积分关于 k3_v_dot 和 k2_q 跟我推的不一样，感觉是我推得有问题，但又没找到在哪
 4. measurementJacobian 中 $\frac{\partial^{C_{i,1}}\bold{p}_j}{\partial \bold{x}_{C_{i,1}}}$ 对四元数的偏导还不知道怎么推，其他地方在 stateAugmentation 中的 J 也有类似的偏导
 5. measurementJacobian 中 observability constrain 作用不明（能观性约束）
-6. removeLostFeatures 中把初始化后的 feature 都删了，为什么在 publish 中还有已初始化的 feature？
+6. ~~removeLostFeatures 中把初始化后的 feature 都删了，为什么在 publish 中还有已初始化的 feature？~~(publish 中初始化的 feature 是在 pruneCamStateBuffer 时初始化的，并且里面初始化的 feature 只更新了被删除帧相关的观测，其他的没有更新，所以在 pruneCamStateBuffer 没有删除，留到了 removeLostFeatures 中更新了全部观测时再删除)
 7. 2point-ransac 没看
 
 ## reference
